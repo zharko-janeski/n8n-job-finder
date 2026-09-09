@@ -125,7 +125,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://192.168.1.104:1234/v1/chat/completions",
+        "url": "http://192.168.1.102:1234/v1/chat/completions",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  model: \"qwen2.5-7b-instruct\",\n  messages: [\n    { role: \"system\", content: \"You are Zarko's job-hunting assistant. Friendly, brief, practical.\" },\n    { role: \"user\", content: $json.text }\n  ],\n  temperature: 0.7,\n  max_tokens: 300\n}) }}",
@@ -159,28 +159,6 @@
       "id": "ac83985a-400b-430f-af84-363866939ff2",
       "name": "Send Qwen Reply",
       "webhookId": "f5816131-fd3b-4d13-88f2-e7e7a240051e",
-      "credentials": {
-        "telegramApi": {
-          "id": "wJvyeoDzCjpjmIRr",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "chatId": "={{ $('Route Command').first().json.chatId }}",
-        "text": "=Job branch works! You sent: {{ $('Route Command').first().json.url }}",
-        "additionalFields": {}
-      },
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        544,
-        48
-      ],
-      "id": "43bd3fb2-9754-4cd2-810e-5e5236ce884a",
-      "name": "Job Placeholder",
-      "webhookId": "4138cc9a-cac3-453f-b6e0-e96444887f0f",
       "credentials": {
         "telegramApi": {
           "id": "wJvyeoDzCjpjmIRr",
@@ -242,7 +220,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://192.168.1.104:1234/v1/chat/completions",
+        "url": "http://192.168.1.102:1234/v1/chat/completions",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  model: \"qwen2.5-7b-instruct\",\n  messages: [\n    { role: \"system\", content: \"You score job listings for a candidate. You follow the output format EXACTLY. No markdown, no extra text.\" },\n    { role: \"user\", content: \"CANDIDATE PROFILE:\\n\" + $json.profile + \"\\n\\nJOB LISTINGS:\\n\" + $json.listing + \"\\n\\nScore each job from [0] to [\" + ($json.count - 1) + \"] from 0-100 for fit. Judge ONLY by each job's real title and description. Senior/lead roles = low score.\\nThe example lines show ONLY the format — NEVER reuse their numbers or words.\\nRespond with EXACTLY \" + $json.count + \" lines, format i|score|short-reason-specific-to-that-job, e.g.:\\n0|15|reason for job 0\\n1|70|reason for job 1\\nNo other text.\" }\n  ],\n  temperature: 0.2,\n  max_tokens: 800\n}) }}",
@@ -489,6 +467,92 @@
           "name": "Telegram account"
         }
       }
+    },
+    {
+      "parameters": {
+        "url": "=https://r.jina.ai/{{ $json.url }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        512,
+        64
+      ],
+      "id": "257497f1-fba7-4c82-b6b9-3739ab7a888e",
+      "name": "Fetch Job Page"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Jina's full page text\nconst raw = $json.data || '';\n\n// 2. Cut the useful window:\n//    job content lives between \"Markdown Content:\" and \"Similar Remote Jobs\"\nlet text = raw;\nconst start = text.indexOf('Markdown Content:');\nif (start !== -1) text = text.slice(start);\nconst end = text.indexOf('Similar Remote Jobs');\nif (end !== -1) text = text.slice(0, end);\n\n// 3. Squeeze whitespace + cap size (context window safety)\ntext = text.replace(/\\s+/g, ' ').trim().slice(0, 3500);\n\n// 4. Bring chatId + url from the entry point\nconst src = $('Route Command').first().json;\n\nreturn [{ json: { text, chatId: src.chatId, url: src.url } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        64
+      ],
+      "id": "21c59485-0f48-4703-9039-fd2deff7df88",
+      "name": "Prepare Extract"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.1.102:1234/v1/chat/completions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"qwen2.5-7b-instruct\",\n  messages: [\n    { role: \"system\", content: \"You extract job details from web page text. You follow the output format EXACTLY. No markdown, no extra text.\" },\n    { role: \"user\", content: \"CANDIDATE PROFILE:\\nEntry-level developer. Wants: automation, n8n, workflow tools, junior developer, QA automation. NOT senior/lead roles. Remote, Europe timezone.\\n\\nJOB PAGE TEXT:\\n\" + $json.text + \"\\n\\nExtract the job details. Judge fit ONLY by the real title and requirements in the text above.\\nThe example lines show ONLY the format — NEVER reuse their words.\\nRespond with EXACTLY 7 lines, format LABEL|value:\\nTITLE|the job title\\nCOMPANY|the company name\\nSALARY|salary or not listed\\nLOCATION|locations or not listed\\nTYPE|employment type or not listed\\nFIT|score 0-100 for the candidate profile\\nVERDICT|one short sentence: fit or not fit, and why\\nNo other text.\" }\n  ],\n  temperature: 0.2,\n  max_tokens: 800\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        896,
+        64
+      ],
+      "id": "5a957d47-53b2-4d43-9c88-c04555ed96d6",
+      "name": "Qwen Extract Job"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Qwen's raw answer\nconst raw = ($json.choices[0].message.content || '').trim();\n\n// 2. Parse LABEL|value lines — tolerate LABEL:value too (8B models slip colons)\nconst fields = {};\nfor (const line of raw.split('\\n')) {\n  const m = line.match(/^\\s*([A-Z]+)\\s*[|:]\\s*(.+)$/);\n  if (m) fields[m[1]] = m[2].trim();\n}\n\n// 3. Essentials present? If not — the model ignored the format entirely\nif (!fields.TITLE || fields.FIT === undefined) {\n  throw new Error('Qwen ignored the format. Raw: ' + raw.slice(0, 300));\n}\n\nconst fit = parseInt(fields.FIT, 10) || 0;\n\n// 4. Build the phone message — same thresholds as the engine (🟢≥70 🟡≥40 🔴)\nconst emoji = fit >= 70 ? '🟢' : fit >= 40 ? '🟡' : '🔴';\nconst src = $('Prepare Extract').first().json;\n\nconst msg = '🔎 Job analysis:\\n\\n'\n  + `${emoji} ${fit}/100 — ${fields.TITLE}\\n`\n  + `🏢 ${fields.COMPANY || '—'}\\n`\n  + `💰 ${fields.SALARY || 'not listed'}\\n`\n  + `📍 ${fields.LOCATION || 'not listed'}\\n`\n  + `📄 ${fields.TYPE || 'not listed'}\\n\\n`\n  + `💬 ${fields.VERDICT || '—'}\\n`\n  + `🔗 ${src.url}`;\n\nreturn [{ json: { message: msg, chatId: src.chatId } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        64
+      ],
+      "id": "6d72569e-1007-4d02-ba93-3c4ee198c0fa",
+      "name": "Format Job Reply"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1328,
+        64
+      ],
+      "id": "08da0e48-6c82-4443-a7ad-ec267735b0dc",
+      "name": "Send Job Analysis",
+      "webhookId": "abdfb2db-89dd-4b64-9771-0c5767720dc1",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJvyeoDzCjpjmIRr",
+          "name": "Telegram account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -526,7 +590,7 @@
         ],
         [
           {
-            "node": "Job Placeholder",
+            "node": "Fetch Job Page",
             "type": "main",
             "index": 0
           }
@@ -644,6 +708,50 @@
           }
         ]
       ]
+    },
+    "Fetch Job Page": {
+      "main": [
+        [
+          {
+            "node": "Prepare Extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Extract": {
+      "main": [
+        [
+          {
+            "node": "Qwen Extract Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qwen Extract Job": {
+      "main": [
+        [
+          {
+            "node": "Format Job Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Job Reply": {
+      "main": [
+        [
+          {
+            "node": "Send Job Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -651,7 +759,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "b644d509-4001-437c-83fc-94149c1444bb",
+  "versionId": "1285ff18-e448-4f85-844a-f5421f4743bc",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "d509a93c1d920dbbcecfc6a349d71a9da38a9b8d8cbe82c410d04fed44dfac26"

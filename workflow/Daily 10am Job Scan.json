@@ -1,0 +1,105 @@
+{
+  "name": "Daily 10am Job Scan",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5460f632-58ef-47d3-be47-6d11cd8c797a",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    query: 'junior developer',\n    chatId: 8009416199\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "20708317-1eec-452b-a075-b6cd79e6ef4e",
+      "name": "daily config"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "W2xZ4eipcS8klQAb",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/W2xZ4eipcS8klQAb",
+          "cachedResultName": "Job Scan Engine"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "4bc89ea5-49eb-4a84-bc55-8b8de9bfd2e1",
+      "name": "Call Engine"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "daily config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "daily config": {
+      "main": [
+        [
+          {
+            "node": "Call Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "Europe/Skopje",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "0810a1b9-bc8b-4aaa-99bd-5319bda97620",
+  "meta": {
+    "instanceId": "d509a93c1d920dbbcecfc6a349d71a9da38a9b8d8cbe82c410d04fed44dfac26"
+  },
+  "id": "mTaSEMyOk5DVITJf",
+  "tags": []
+}

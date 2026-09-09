@@ -1,0 +1,434 @@
+{
+  "name": "Job Scan Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "af7c77ca-a842-4830-bd66-c8f1476465a9",
+      "name": "Scan Input"
+    },
+    {
+      "parameters": {
+        "url": "=https://remotive.com/api/remote-jobs?search={{ $json.query }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "dd79879b-fafb-4391-bdf1-2c941e6e4160",
+      "name": "Remotive Search"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1BXQMGIMo1PbIJ4wnMJvjrDnyrbzxkAWerLKBjRnnDwQ",
+          "mode": "list",
+          "cachedResultName": "Job Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BXQMGIMo1PbIJ4wnMJvjrDnyrbzxkAWerLKBjRnnDwQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BXQMGIMo1PbIJ4wnMJvjrDnyrbzxkAWerLKBjRnnDwQ/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        384,
+        0
+      ],
+      "id": "b9aa73ff-c6bf-4566-b282-51df67d79eec",
+      "name": "Get Seen URLs",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "d2Z6tcEDJmwSVxX6",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const all = $('Remotive Search').first().json.jobs || [];\n\n// URLs already in the Sheet = already seen\nconst seen = new Set($('Get Seen URLs').all().map(i => (i.json.URL || '').trim()));\nconst fresh = all.filter(j => !seen.has(j.url));\nconst top = fresh.slice(0, 10); // cap 10 — model-friendly batch\n\nconst profile = `Entry-level developer. Wants: automation, n8n, workflow tools, junior developer, QA automation, integrations. NOT senior/lead roles. Remote, Europe timezone.`;\n\nif (top.length === 0) {\n  return [{ json: { empty: true, chatId: $('Scan Input').first().json.chatId, query: $('Scan Input').first().json.query } }];\n}\n\nconst listing = top.map((j, i) => {\n  const desc = (j.description || '').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').slice(0, 400);\n  return `[${i}] ${j.title} at ${j.company_name} | ${j.candidate_required_location || 'Remote'}\\n${desc}`;\n}).join('\\n\\n');\n\nreturn [{ json: {\n  listing,\n  profile,\n  count: top.length,\n  jobs: top.map(j => ({ title: j.title, company: j.company_name, location: j.candidate_required_location || 'Remote', url: j.url })),\n  chatId: $('Scan Input').first().json.chatId,\n  query: $('Scan Input').first().json.query\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ],
+      "id": "a85cf794-0865-489c-8f98-b4581034f713",
+      "name": "Prepare Scoring"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "654cbdb3-b9f4-490b-8a8d-89db45f8f017",
+              "leftValue": "={{ $json.empty }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        768,
+        0
+      ],
+      "id": "a0b793c9-0dd7-40a1-8ee5-06869d762ee2",
+      "name": "Has New Jobs?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://192.168.1.102:1234/v1/chat/completions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"qwen2.5-7b-instruct\",\n  messages: [\n    { role: \"system\", content: \"You score job listings for a candidate. You follow the output format EXACTLY. No markdown, no extra text.\" },\n    { role: \"user\", content: \"CANDIDATE PROFILE:\\n\" + $json.profile + \"\\n\\nJOB LISTINGS:\\n\" + $json.listing + \"\\n\\nScore each job from [0] to [\" + ($json.count - 1) + \"] from 0-100 for fit. Judge ONLY by each job's real title and description. Senior/lead roles = low score.\\nThe example lines show ONLY the format — NEVER reuse their numbers or words.\\nRespond with EXACTLY \" + $json.count + \" lines, format i|score|short-reason-specific-to-that-job, e.g.:\\n0|15|reason for job 0\\n1|70|reason for job 1\\nNo other text.\" }\n  ],\n  temperature: 0.2,\n  max_tokens: 800\n}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1088,
+        -112
+      ],
+      "id": "41359e48-fbc0-42e8-a339-ad568e3a3aaa",
+      "name": "Qwen Score Jobs"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Read Qwen's raw answer\nconst raw = ($json.choices[0].message.content || '').trim();\n\n// 2. Parse lines in format: i|score|reason (ignores any prose around them)\nconst scores = raw\n  .split('\\n')\n  .map(l => l.trim())\n  .filter(l => /^\\d+\\s*\\|/.test(l))\n  .map(l => {\n    const parts = l.split('|');\n    return {\n      i: parseInt(parts[0], 10),\n      score: parseInt(parts[1], 10) || 0,\n      reason: (parts.slice(2).join('|') || '').trim().slice(0, 60)\n    };\n  })\n  .filter(s => !isNaN(s.i));\n\nif (scores.length === 0) {\n  throw new Error('Qwen ignored the format. Raw answer: ' + raw.slice(0, 300));\n}\n\n// 3. Merge with jobs, sort best first\nconst prev = $('Prepare Scoring').first().json;\nconst jobs = prev.jobs || [];\n\nconst ranked = scores\n  .map(s => {\n    const job = jobs[s.i] || { title: '?', company: '?', url: '' };\n    return { score: s.score, reason: s.reason, ...job };\n  })\n  .sort((a, b) => b.score - a.score);\n\n// 4. Phone-friendly message\nconst lines = ranked.map(r => {\n  const emoji = r.score >= 70 ? '🟢' : r.score >= 40 ? '🟡' : '🔴';\n  return `${emoji} ${r.score}/100 — ${r.title} (${r.company})\\n   💬 ${r.reason}\\n   🔗 ${r.url}`;\n});\n\nconst msg = `🤖 Ranked for \"${prev.query}\" — best fit first:\\n\\n` + lines.join('\\n\\n');\n\nreturn [{ json: { message: msg, chatId: prev.chatId, ranked } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -112
+      ],
+      "id": "87239b44-a285-4eab-847c-0c6d0cf1b65a",
+      "name": "Merge & Rank"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ranked = $json.ranked || [];\nconst today = new Date().toISOString().slice(0, 10);\nconst query = $('Prepare Scoring').first().json.query;\n\nreturn ranked.map(r => ({ json: {\n  Date: today,\n  Query: query,\n  Score: r.score,\n  Title: r.title,\n  Company: r.company,\n  Location: r.location || 'Remote',\n  URL: r.url,\n  Reason: r.reason\n}}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        -224
+      ],
+      "id": "8364fe37-90eb-4c21-aef7-c8901877c91b",
+      "name": "Split Rows"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1BXQMGIMo1PbIJ4wnMJvjrDnyrbzxkAWerLKBjRnnDwQ",
+          "mode": "list",
+          "cachedResultName": "Job Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BXQMGIMo1PbIJ4wnMJvjrDnyrbzxkAWerLKBjRnnDwQ/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1BXQMGIMo1PbIJ4wnMJvjrDnyrbzxkAWerLKBjRnnDwQ/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Query",
+              "displayName": "Query",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Score",
+              "displayName": "Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Title",
+              "displayName": "Title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company",
+              "displayName": "Company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Location",
+              "displayName": "Location",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "URL",
+              "displayName": "URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Reason",
+              "displayName": "Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1824,
+        -224
+      ],
+      "id": "57ca1e74-e8c0-4cbb-8144-2ff775a7ca7f",
+      "name": "Log Jobs",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "d2Z6tcEDJmwSVxX6",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1568,
+        -16
+      ],
+      "id": "03ae0873-4a7e-4e1b-8bf7-ef065a1772af",
+      "name": "Send Job List",
+      "webhookId": "abdfb2db-89dd-4b64-9771-0c5767720dc1",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJvyeoDzCjpjmIRr",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "=😶 No new jobs for \"{{ $json.query }}\" — everything already seen & logged.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1088,
+        128
+      ],
+      "id": "9ff98239-c7ee-453f-86a7-89752b1be87c",
+      "name": "No New Jobs Msg",
+      "webhookId": "f655fa69-2a75-4c9c-b003-06e6d4350852",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJvyeoDzCjpjmIRr",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Scan Input": {
+      "main": [
+        [
+          {
+            "node": "Remotive Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remotive Search": {
+      "main": [
+        [
+          {
+            "node": "Get Seen URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Seen URLs": {
+      "main": [
+        [
+          {
+            "node": "Prepare Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Scoring": {
+      "main": [
+        [
+          {
+            "node": "Has New Jobs?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Jobs?": {
+      "main": [
+        [
+          {
+            "node": "Qwen Score Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No New Jobs Msg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qwen Score Jobs": {
+      "main": [
+        [
+          {
+            "node": "Merge & Rank",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge & Rank": {
+      "main": [
+        [
+          {
+            "node": "Split Rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Job List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Rows": {
+      "main": [
+        [
+          {
+            "node": "Log Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "9da4f881-18bb-4faf-aabe-1a58d855ff38",
+  "meta": {
+    "instanceId": "d509a93c1d920dbbcecfc6a349d71a9da38a9b8d8cbe82c410d04fed44dfac26"
+  },
+  "id": "W2xZ4eipcS8klQAb",
+  "tags": []
+}
